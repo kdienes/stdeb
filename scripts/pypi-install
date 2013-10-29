@@ -126,6 +126,8 @@ def main():
                       default=None)
     parser.add_option('--build-here', action='store_true',
                       help='build the pieces in this dir, skip install')
+    parser.add_option('--build-this', action='store_true',
+                      help='build the pieces in this dir, skip install')
     parser.add_option('--keep', action='store_true',
                       default=False,
                       help='do not remove temporary files')
@@ -137,33 +139,46 @@ def main():
 
     if options.build_here:
         options.keep = True
-
-    package_name = args[0]
+        
+    if options.build_this:
+        options.keep = True
 
     orig_dir = os.path.abspath( os.curdir )
-    if options.build_here:
+
+    if options.build_this:
+        tmpdir = os.curdir
+    elif options.build_here:
         tmpdir = os.path.abspath(package_name)
         if not os.path.isdir(tmpdir):
             os.mkdir(tmpdir)
     else:
         tmpdir = os.path.abspath(tempfile.mkdtemp())
-    try:
-        if options.verbose >= 2:
-            myprint('downloading to %s'%tmpdir)
-        os.chdir( tmpdir )
-        tarball_fname = get_source_tarball(package_name,release=options.release,verbose=options.verbose)
-        cmd = 'tar xzf %s' % tarball_fname
-        if options.verbose >= 2:
-            myprint('executing: %s'%cmd)
-        subprocess.check_call(cmd, shell=True)
 
-        expanded_dir = None
-        for entry in os.listdir(os.curdir):
-            if os.path.isdir(entry):
-                assert expanded_dir is None, "only expected one directory"
-                expanded_dir = entry
+    try:
+
+        if not options.build_this:
+            package_name = args[0]
+            if options.verbose >= 2:
+                myprint('downloading to %s'%tmpdir)
+            os.chdir( tmpdir )
+            tarball_fname = get_source_tarball(package_name,release=options.release,verbose=options.verbose)
+            cmd = 'tar xzf %s' % tarball_fname
+            if options.verbose >= 2:
+                myprint('executing: %s'%cmd)
+            subprocess.check_call(cmd, shell=True)
+
+            expanded_dir = None
+            for entry in os.listdir(os.curdir):
+                if os.path.isdir(entry):
+                    assert expanded_dir is None, "only expected one directory"
+                    expanded_dir = entry
+
+        else:
+
+            expanded_dir = tmpdir
 
         os.chdir( expanded_dir )
+
         cmd = ('%s setup.py --command-packages=stdeb.command sdist_dsc '
                '--guess-conflicts-provides-replaces=True bdist_deb' %
                (sys.executable, ) )
@@ -171,7 +186,7 @@ def main():
             myprint('executing: %s'%cmd)
         subprocess.check_call(cmd, shell=True)
 
-        if not options.build_here:
+        if not (options.build_here or options.build_this):
             os.chdir( 'deb_dist' )
             cmd = 'sudo dpkg -i *.deb'
             if options.verbose >= 2:
