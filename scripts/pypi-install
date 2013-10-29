@@ -4,6 +4,7 @@ import xmlrpclib
 import urllib2
 import hashlib
 import warnings
+import glob
 from optparse import OptionParser
 import tempfile
 import subprocess
@@ -28,6 +29,22 @@ def find_tar_gz(package_name, release=None, pypi_url = 'http://python.org/pypi',
         myprint( 'querying PyPI (%s) for package name "%s"' % (pypi_url,
                                                                package_name) )
     releases = pypi.package_releases(package_name)
+    if not releases:
+        print package_name, "not found, trying search:"
+        matches = pypi.search(dict(name=package_name))
+        if not matches:
+            raise ValueError("No pypi search results for %s, try google" % package_name)
+        for match in matches:
+            print match["name"], match["version"]
+            print match["summary"]
+        if len(matches) > 1:
+            raise ValueError("Multiple options, pick one and try again")
+        package_name = matches[0]["name"]
+        releases = pypi.package_releases(package_name)
+        if not releases:
+            raise ValueError("%s found, but no releases found" % package_name)
+        print "Assuming you meant", package_name
+
     if verbose >= 2:
         myprint( 'found releases: %s' % (', '.join(releases),) )
         
@@ -107,6 +124,8 @@ def main():
     parser.add_option('--release', type='string',
                       help='package release to use',
                       default=None)
+    parser.add_option('--build-here', action='store_true',
+                      help='build the pieces in this dir, skip install')
     parser.add_option('--keep', action='store_true',
                       default=False,
                       help='do not remove temporary files')
@@ -116,10 +135,18 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    if options.build_here:
+        options.keep = True
+
     package_name = args[0]
 
     orig_dir = os.path.abspath( os.curdir )
-    tmpdir = os.path.abspath(tempfile.mkdtemp())
+    if options.build_here:
+        tmpdir = os.path.abspath(package_name)
+        if not os.path.isdir(tmpdir):
+            os.mkdir(tmpdir)
+    else:
+        tmpdir = os.path.abspath(tempfile.mkdtemp())
     try:
         if options.verbose >= 2:
             myprint('downloading to %s'%tmpdir)
@@ -144,12 +171,14 @@ def main():
             myprint('executing: %s'%cmd)
         subprocess.check_call(cmd, shell=True)
 
-        os.chdir( 'deb_dist' )
-        cmd = 'sudo dpkg -i *.deb'
-        if options.verbose >= 2:
-            myprint('executing: %s'%cmd)
-        subprocess.check_call(cmd, shell=True)
-
+        if not options.build_here:
+            os.chdir( 'deb_dist' )
+            cmd = 'sudo dpkg -i *.deb'
+            if options.verbose >= 2:
+                myprint('executing: %s'%cmd)
+            subprocess.check_call(cmd, shell=True)
+        else:
+            print "Now dpkg -i", " ".join(glob.glob(os.path.join(tmpdir, expanded_dir, "deb_dist/*.deb")))
     finally:
         os.chdir( orig_dir )
         if not options.keep:
