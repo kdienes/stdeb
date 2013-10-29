@@ -774,6 +774,9 @@ class DebianInfo:
         self.debian_section = parse_val(cfg,module_name,'Section')
 
         self.description = re.sub('\s+', ' ', description).strip()
+        if self.description != description:
+            log.warn('warning: removed extra whitespace from description')
+
         if long_description != 'UNKNOWN':
             ld2=[]
             for line in long_description.split('\n'):
